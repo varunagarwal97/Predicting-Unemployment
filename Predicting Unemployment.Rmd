@@ -1,0 +1,146 @@
+---
+title: "RGDP as a predictor of Unemployment"
+author: "Varun Agarwal, Ajinkya Khamkar, Jivitesh Poojary, Yatin Sharma"
+output:
+  pdf_document: default
+  html_document: default
+geometry: margin=0.65in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE,message = FALSE)
+```
+#Exploring the Time series  
+We decompose the time series data for Unemployment Rate in US, into its Seasonal, Trend, Oscillatory and Residual components, as shown below.  
+
+##Seasonality  
+
+As shown below, we observe seasonal oscillations in our data, which appear to be noticeably decreasing with time.  
+
+```{r fig.width=8,fig.height = 4, echo=FALSE}
+library(ggplot2)
+df.unemp=read.csv("UNRATENSA.csv",sep = ',',header = TRUE)
+colnames(df.unemp) = c("date","Unemployment")
+df.newdata=ts(df.unemp$Unemployment,start=c(1948,1),freq=12)
+data.df.unemp = data.frame(year=time(df.newdata), Unemployment=(df.unemp$Unemployment))
+data.unemp.stl = stl(df.newdata, s.window=101, s.degree=1)
+year.cut = cut_number(time(df.newdata), n=4)
+data.df2.unemp = data.frame(year=time(df.newdata), data.unemp.stl$time.series, year.cut)
+ggplot(data.df2.unemp, aes(x=year, y=seasonal)) + geom_line() + facet_wrap(~year.cut, ncol=1, scales="free_x")+ggtitle("Seasonality with series cut into 4 parts")+xlab("Years") + ylab("Seasonal Component") + theme(plot.title = element_text(hjust=0.5))
+
+```
+To get a better view of seasonality, we have drawn a Month plot. We see that there is an appreciable amount of variation in seasonality for all months, except for the months of May and December.  
+```{r fig.width=8,fig.height=3, echo=FALSE}
+monthplot(data.unemp.stl, choice="seasonal",main="Month Plot representing Seasonal Oscillations",xlab="Months", ylab = "Seasonal Oscillations")
+```
+
+##Trend  
+  
+We do not observe a clear trend in the data. We notice that the graph is increasing up to the year 1970, after which it decreases till 1985. Thereafter, we see that the graph is increasing up to the year 2017. So, we can conclude that the plot is not monotonic.
+
+```{r trend, fig.width=8,fig.height=2.5, echo=FALSE}
+library(broom)
+data.unemp.lo = loess(Unemployment~year, data=data.df.unemp)
+data.unemp.lo.df = augment(data.unemp.lo)
+ggplot(data.unemp.lo.df, aes(x=year, y=.fitted)) + geom_line()+ggtitle("Trend Component of Unemployment Time Series")+ylab("Trend")+xlab("Years") + theme(plot.title = element_text(hjust=0.5))
+```
+
+##Oscillations  
+  
+We observe about six or seven cycles in our data, as seen by plotting the fitted values of the third-order loess.  
+
+```{r oscillations,fig.width=10,fig.height=2.5, echo=FALSE}
+library(tidyr)
+Year = data.df.unemp$year
+data.unemp.lo2 = loess(residuals(data.unemp.lo)~Year, span=0.1)
+data.unemp.lo2.df = augment(data.unemp.lo2)
+#final 
+
+data.unemp.ts = data.frame(Year,Oscillatory=data.unemp.lo2.df$.fitted, Residuals=data.unemp.lo2.df$.resid)
+ggplot(data.unemp.lo2.df, aes(x=Year, y=.fitted)) + geom_line() +ggtitle("Oscillatory Component of Unemployment Time Series")+ ylab("Oscillatory Component") + theme(plot.title = element_text(hjust=0.5))
+```
+
+##Residuals  
+  
+Apart from a few large residuals, we observe that most of the plot looks like random noise. So, we can infer that we have explained most of the variation in the data.
+
+```{r residuals,fig.width=10,fig.height=2.5, echo=FALSE}
+library(tidyr)
+Year = data.df.unemp$year
+data.unemp.lo2 = loess(residuals(data.unemp.lo)~Year, span=0.1)
+data.unemp.lo2.df = augment(data.unemp.lo2)
+#final 
+
+data.unemp.ts = data.frame(Year,Oscillatory=data.unemp.lo2.df$.fitted, Residuals=data.unemp.lo2.df$.resid)
+ggplot(data.unemp.lo2.df, aes(x=Year, y=.resid)) + geom_line() +ggtitle("Residual component of Unemployment Time Series")+ ylab("Residual") + theme(plot.title = element_text(hjust=0.5)) + geom_abline(slope = 0)
+```
+  
+In all, we see that the oscillatory component explains the maximum variation, followed by the trend component, followed by the seasonal component which explains the least variation. Although, the residuals are larger than expected, they should not be of major concern since they look like random noise.
+
+  
+#Percentage change in RGDP as a predictor of Unemployment rate  
+  
+Economically, there should be a correlation between the change in RGDP (Real Gross Domestic Product) and the unemployment rate. We have reason to believe that percentage change in RGDP, as compared to the preceding period, can be one of the parameters to predict unemployment rate in advance. We also believe that if there should be a relationship between them, it should be an inverse relationship. This means that an increase in the percentage change in RGDP should be followed by a decrease in the unemployment rate, and vice-versa.  
+
+We have obtained seasonally-adjusted quarterly data for RGDP, (Percent change from preceding period) from January 1948 to October 2016. To graphically ascertain that Percentage change in RGDP can predict unemployment rate, we have extracted the oscillatory component in the RGDP time series, and compared it with the oscillatory component of the Unemployment rate time series. The oscillatory component of the RGDP time series was extracted in the fitted values of its second-order loess, since the data is already seasonally-adjusted. The graph below shows the relationship between them.  
+
+```{r GDP,echo=FALSE}
+library(dplyr)
+library(grid)
+#Reading GDP data from file
+df=read.csv("RGDP_Final.csv",sep = ',',header = TRUE)
+
+#Editing column names
+colnames(df)=c("year","GDP")
+
+#Converting year column to continuous
+df.gdp=ts(df$GDP,start=c(1948,1),freq=4)
+
+#Creating final GDP data set
+gdp = data.frame(year=time(df.gdp), GDP=df$GDP)
+
+library(broom)
+#Fitting first loess and removing the trend component
+gdp.lo = loess(GDP~year, data=gdp)
+gdp.lo.df = augment(gdp.lo)
+
+#Re-fit the loess
+df2.lo2 = loess(residuals(gdp.lo)~gdp$year, span=0.1)
+gdp.lo2.df = augment(df2.lo2)
+
+#Oscillations
+p1=ggplot(gdp.lo2.df, aes(x=gdp.year, y=.fitted)) + geom_line() + ggtitle("Oscillatory Component for Real Gross Domestic Product") + ylab("Oscillatory Component")+xlab("Years") + theme(plot.title = element_text(hjust=0.5))
+
+p2=ggplot(data.unemp.lo2.df,aes(x=Year,y=.fitted))+ geom_line() + ggtitle("Oscillatory Component for Unemployment")+ylab("Oscillatory Component")+xlab("Years") + theme(plot.title = element_text(hjust=0.5))
+
+grid.draw(rbind(ggplotGrob(p1), ggplotGrob(p2), size = "last")) 
+```
+  
+In the graph above, we can see an inverse relationship between the oscillatory components of Percent change in RGDP and Unemployment rate. We notice that the peaks and troughs in the plot for Percent change in RGDP, precede the troughs and peaks in the plot for Unemployment rate, by a span of 1 year to 1.5 years. So, it seems like that there might be a causal relationship between percentage change in RGDP and Unemployment rate.  
+
+To further ascertain this, we have divided the data for both RGDP and Unemployment into 3 chunks by years. Thereafter, we have plotted a comparison of corresponding chunks for RGDP and Unemployment, which is shown below. Note that the y-axis for the RGDP series has been flipped, to get a better comparison. From the plot below, we can see that during the years 1948-1994, the peaks for RGDP precede the  peaks for Unemployment by 1 to 2 years, on an average. Although, we observe that the trough of RGDP in 1984 is not accounted for by a trough in Unemployment, until much later in 1989, but this can be one of the exceptions which could due to other economic factors. For the years 1994-2017, we see that precedence of RGDP is about 1.5 years, except for during mid-2008, for which the peak in Unemployment rate is accounted for after two years during mid-2010. Again, this might be due to external economic factors.
+```{r TimeLag,fig.width=12,fig.height = 15, echo=FALSE}
+year.cut2 = cut_number(gdp.lo2.df$gdp.year, n=6)
+gdp.lo2.df2 = data.frame(gdp.lo2.df, year.cut2)
+
+  p3 = ggplot(gdp.lo2.df2, aes(x=gdp.year, y=.fitted)) +ggtitle("Oscillatory Component for Real Gross Domestic Product with time lags [1948,1971]") + ylab("Oscillatory Component")+xlab("Years") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  scale_x_continuous(breaks=round(seq(1948,1971,by = 2),1),limits=c(1948,1971)) + theme(plot.title = element_text(hjust=0.5)) + geom_line() + scale_y_reverse()
+
+year.cut = cut_number(time(df.newdata), n=6)
+data.unemp.lo2.df2 = data.frame(data.unemp.lo2.df, year.cut)
+
+p4 = ggplot(data.unemp.lo2.df2, aes(x=Year, y=.fitted)) +ggtitle("Oscillatory Component for Unemployment with time lags [1948,1971]") + ylab("Oscillatory Component")+xlab("Years") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + scale_x_continuous(breaks=round(seq(1948,1971,by = 2),1),limits=c(1948,1971)) + theme(plot.title = element_text(hjust=0.5)) + geom_line()
+
+p5 = ggplot(gdp.lo2.df2, aes(x=gdp.year, y=.fitted)) +ggtitle("Oscillatory Component for Real Gross Domestic Product with time lags [1971,1994]") + ylab("Oscillatory Component")+xlab("Years") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  scale_x_continuous(breaks=round(seq(1971,1994,by = 2),1),limits=c(1971,1994)) + theme(plot.title = element_text(hjust=0.5)) + geom_line()+ scale_y_reverse()
+
+p6 = ggplot(data.unemp.lo2.df2, aes(x=Year, y=.fitted)) +ggtitle("Oscillatory Component for Unemployment with time lags [1971,1994]") + ylab("Oscillatory Component")+xlab("Years") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + scale_x_continuous(breaks=round(seq(1971,1994,by = 2),1),limits=c(1971,1994)) + theme(plot.title = element_text(hjust=0.5)) + geom_line()
+
+p7 = ggplot(gdp.lo2.df2, aes(x=gdp.year, y=.fitted)) +ggtitle("Oscillatory Component for Real Gross Domestic Product with time lags [1994,2017]") + ylab("Oscillatory Component")+xlab("Years") + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  scale_x_continuous(breaks=round(seq(1994,2017,by = 2),1),limits=c(1994,2017)) + theme(plot.title = element_text(hjust=0.5)) + geom_line()+ scale_y_reverse()
+
+p8 = ggplot(data.unemp.lo2.df2, aes(x=Year, y=.fitted)) +ggtitle("Oscillatory Component for Unemployment with time lags [1994,2017]") + ylab("Oscillatory Component")+xlab("Years") + theme(axis.text.x = element_text(angle = 45, hjust = 1))  + scale_x_continuous(breaks=round(seq(1994,2017,by = 2),1),limits=c(1994,2017)) + theme(plot.title = element_text(hjust=0.5)) + geom_line()
+
+#library("gridExtra")
+grid.draw(rbind(ggplotGrob(p3),ggplotGrob(p4),ggplotGrob(p5),ggplotGrob(p6),ggplotGrob(p7), ggplotGrob(p8), size = "last"))
+
+```
+  
+In conclusion, we see that our notion that Percent Change in RGDP can predict Unemployment, seems to be turning out quite well.
